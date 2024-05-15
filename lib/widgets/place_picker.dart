@@ -20,6 +20,8 @@ import '../uuid.dart';
 /// API key provided should have `Maps SDK for Android`, `Maps SDK for iOS`
 /// and `Places API`  enabled for it
 class PlacePicker extends StatefulWidget {
+  static const LatLng defaultLocation = LatLng(10.5381264, 73.8827201);
+
   /// API key generated from Google Cloud Console. You can get an API key
   /// [here](https://cloud.google.com/maps-platform/)
   final String apiKey;
@@ -27,18 +29,14 @@ class PlacePicker extends StatefulWidget {
   /// Location to be displayed when screen is showed. If this is set or not null, the
   /// map does not pan to the user's current location.
   final LatLng? displayLocation;
-  LocalizationItem? localizationItem;
-  LatLng defaultLocation = LatLng(10.5381264, 73.8827201);
+  final LocalizationItem? localizationItem;
 
-  PlacePicker(this.apiKey,
-      {this.displayLocation, this.localizationItem, LatLng? defaultLocation}) {
-    if (this.localizationItem == null) {
-      this.localizationItem = new LocalizationItem();
-    }
-    if (defaultLocation != null) {
-      this.defaultLocation = defaultLocation;
-    }
-  }
+  PlacePicker(
+    this.apiKey, {
+    this.displayLocation = defaultLocation,
+    LatLng? defaultLocation,
+    this.localizationItem = const LocalizationItem(),
+  });
 
   @override
   State<StatefulWidget> createState() => PlacePickerState();
@@ -69,222 +67,6 @@ class PlacePickerState extends State<PlacePicker> {
   bool hasSearchTerm = false;
 
   String previousSearchTerm = '';
-
-  // constructor
-  // PlacePickerState();
-
-  void onMapCreated(GoogleMapController controller) {
-    this.mapController.complete(controller);
-    moveToCurrentUserLocation();
-  }
-
-  @override
-  void setState(fn) {
-    if (this.mounted) {
-      super.setState(fn);
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.displayLocation == null) {
-      _getCurrentLocation().then((value) {
-        if (value != null) {
-          setState(() {
-            _currentLocation = value;
-          });
-        } else {
-          //Navigator.of(context).pop(null);
-          print("getting current location null");
-        }
-        setState(() {
-          _loadMap = true;
-        });
-      }).catchError((e) {
-        if (e is LocationServiceDisabledException) {
-          Navigator.of(context).pop(null);
-        } else {
-          setState(() {
-            _loadMap = true;
-          });
-        }
-        print(e);
-        //Navigator.of(context).pop(null);
-      });
-    } else {
-      setState(() {
-        markers.add(Marker(
-          position: widget.displayLocation!,
-          markerId: MarkerId("selected-location"),
-        ));
-        _loadMap = true;
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    this.overlayEntry?.remove();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () {
-        if (Platform.isAndroid) {
-          locationResult = null;
-          _delayedPop();
-          return Future.value(false);
-        }  else  {
-          return Future.value(true);
-        }
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          key: this.appBarKey,
-          title: SearchInput(searchPlace),
-          centerTitle: true,
-          automaticallyImplyLeading: false,
-        ),
-        body: Column(
-          children: <Widget>[
-            Expanded(
-              child: !_loadMap
-                  ? Center(
-                      child: CircularProgressIndicator(),
-                    )
-                  : GoogleMap(
-                      initialCameraPosition: CameraPosition(
-                        target: widget.displayLocation ??
-                            _currentLocation ??
-                            widget.defaultLocation,
-                        zoom: _currentLocation == null &&
-                                widget.displayLocation == null
-                            ? 5
-                            : 15,
-                      ),
-                      minMaxZoomPreference: MinMaxZoomPreference(0, 16),
-                      myLocationButtonEnabled: true,
-                      myLocationEnabled: true,
-                      buildingsEnabled: false,
-                      onMapCreated: onMapCreated,
-                      onTap: (latLng) {
-                        clearOverlay();
-                        moveToLocation(latLng);
-                      },
-                      markers: markers,
-                    ),
-            ),
-            if (!this.hasSearchTerm)
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    SelectPlaceAction(getLocationName(), () {
-                      if (Platform.isAndroid) {
-                        _delayedPop();
-                      } else {
-                        Navigator.of(context).pop(this.locationResult);
-                      }
-                    }, widget.localizationItem!.tapToSelectLocation),
-                    Divider(height: 8),
-                    Padding(
-                      child: Text(widget.localizationItem!.nearBy,
-                          style: TextStyle(fontSize: 16)),
-                      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                    ),
-                    Expanded(
-                      child: ListView(
-                        children: nearbyPlaces
-                            .map((it) => NearbyPlaceItem(it, () {
-                                  if (it.latLng != null) {
-                                    moveToLocation(it.latLng!);
-                                  }
-                                }))
-                            .toList(),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Hides the autocomplete overlay
-  void clearOverlay() {
-    if (this.overlayEntry != null) {
-      this.overlayEntry?.remove();
-      this.overlayEntry = null;
-    }
-  }
-
-  /// Begins the search process by displaying a "wait" overlay then
-  /// proceeds to fetch the autocomplete list. The bottom "dialog"
-  /// is hidden so as to give more room and better experience for the
-  /// autocomplete list overlay.
-  void searchPlace(String place) {
-    // on keyboard dismissal, the search was being triggered again
-    // this is to cap that.
-    if (place == this.previousSearchTerm) {
-      return;
-    }
-
-    previousSearchTerm = place;
-
-    if (context == null) {
-      return;
-    }
-
-    clearOverlay();
-
-    setState(() {
-      hasSearchTerm = place.length > 0;
-    });
-
-    if (place.length < 1) {
-      return;
-    }
-
-    final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
-    final size = renderBox?.size;
-
-    final RenderBox? appBarBox =
-        this.appBarKey.currentContext?.findRenderObject() as RenderBox?;
-
-    this.overlayEntry = OverlayEntry(
-      builder: (context) => Positioned(
-        top: appBarBox?.size.height,
-        width: size?.width,
-        child: Material(
-          elevation: 1,
-          child: Container(
-            padding: EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-            child: Row(
-              children: <Widget>[
-                SizedBox(
-                    height: 24,
-                    width: 24,
-                    child: CircularProgressIndicator(strokeWidth: 3)),
-                SizedBox(width: 24),
-                Expanded(
-                    child: Text(widget.localizationItem!.findingPlace,
-                        style: TextStyle(fontSize: 16)))
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-
-    Overlay.of(context)?.insert(this.overlayEntry!);
-
-    autoCompleteSearch(place);
-  }
 
   /// Fetches the place autocomplete list with the query [place].
   void autoCompleteSearch(String place) async {
@@ -346,6 +128,99 @@ class PlacePickerState extends State<PlacePicker> {
     }
   }
 
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: !Platform.isAndroid,
+      onPopInvoked: (_) {
+        if (Platform.isAndroid) {
+          locationResult = null;
+          _delayedPop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          key: this.appBarKey,
+          title: SearchInput(searchPlace),
+          centerTitle: true,
+          automaticallyImplyLeading: false,
+        ),
+        body: Column(
+          children: <Widget>[
+            Expanded(
+              child: !_loadMap
+                  ? Center(
+                      child: CircularProgressIndicator(),
+                    )
+                  : GoogleMap(
+                      initialCameraPosition: CameraPosition(
+                        target: widget.displayLocation ??
+                            _currentLocation ??
+                            PlacePicker.defaultLocation,
+                        zoom: _currentLocation == null &&
+                                widget.displayLocation == null
+                            ? 5
+                            : 15,
+                      ),
+                      minMaxZoomPreference: MinMaxZoomPreference(0, 16),
+                      myLocationButtonEnabled: true,
+                      myLocationEnabled: true,
+                      buildingsEnabled: false,
+                      onMapCreated: onMapCreated,
+                      onTap: (latLng) {
+                        clearOverlay();
+                        moveToLocation(latLng);
+                      },
+                      markers: markers,
+                    ),
+            ),
+            if (!this.hasSearchTerm)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    SelectPlaceAction(getLocationName(), () {
+                      if (Platform.isAndroid) {
+                        _delayedPop();
+                      } else {
+                        Navigator.of(context).pop(this.locationResult);
+                      }
+                    }, widget.localizationItem!.tapToSelectLocation),
+                    Divider(height: 8),
+                    Padding(
+                      child: Text(widget.localizationItem!.nearBy,
+                          style: TextStyle(fontSize: 16)),
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                    ),
+                    Expanded(
+                      child: ListView(
+                        children: nearbyPlaces
+                            .map((it) => NearbyPlaceItem(it, () {
+                                  if (it.latLng != null) {
+                                    moveToLocation(it.latLng!);
+                                  }
+                                }))
+                            .toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Hides the autocomplete overlay
+  void clearOverlay() {
+    if (this.overlayEntry != null) {
+      this.overlayEntry?.remove();
+      this.overlayEntry = null;
+    }
+  }
+
   /// To navigate to the selected place from the autocomplete list to the map,
   /// the lat,lng is required. This method fetches the lat,lng of the place and
   /// proceeds to moving the map to that location.
@@ -397,7 +272,13 @@ class PlacePickerState extends State<PlacePicker> {
       ),
     );
 
-    Overlay.of(context)?.insert(this.overlayEntry!);
+    Overlay.of(context).insert(this.overlayEntry!);
+  }
+
+  @override
+  void dispose() {
+    this.overlayEntry?.remove();
+    super.dispose();
   }
 
   /// Utility function to get clean readable name of a location. First checks
@@ -419,16 +300,6 @@ class PlacePickerState extends State<PlacePicker> {
     }
 
     return "${this.locationResult?.name}, ${this.locationResult?.locality}";
-  }
-
-  /// Moves the marker to the indicated lat,lng
-  void setMarker(LatLng latLng) {
-    // markers.clear();
-    setState(() {
-      markers.clear();
-      markers.add(
-          Marker(markerId: MarkerId("selected-location"), position: latLng));
-    });
   }
 
   /// Fetches and updates the nearby places to the provided lat,lng
@@ -473,6 +344,76 @@ class PlacePickerState extends State<PlacePicker> {
     }
   }
 
+  @override
+  void initState() {
+    super.initState();
+    if (widget.displayLocation == null) {
+      _getCurrentLocation().then((value) {
+        setState(() {
+          _currentLocation = value;
+        });
+        setState(() {
+          _loadMap = true;
+        });
+      }).catchError((e) {
+        if (e is LocationServiceDisabledException) {
+          Navigator.of(context).pop(null);
+        } else {
+          setState(() {
+            _loadMap = true;
+          });
+        }
+        print(e);
+        //Navigator.of(context).pop(null);
+      });
+    } else {
+      setState(() {
+        markers.add(Marker(
+          position: widget.displayLocation!,
+          markerId: MarkerId("selected-location"),
+        ));
+        _loadMap = true;
+      });
+    }
+  }
+
+  void moveToCurrentUserLocation() async {
+    if (widget.displayLocation != null) {
+      moveToLocation(widget.displayLocation!);
+      return;
+    }
+    if (_currentLocation != null) {
+      moveToLocation(_currentLocation!);
+    } else {
+      moveToLocation(PlacePicker.defaultLocation);
+    }
+  }
+
+  /// Moves the camera to the provided location and updates other UI features to
+  /// match the location.
+  void moveToLocation(LatLng latLng) {
+    this.mapController.future.then((controller) {
+      controller.animateCamera(
+        CameraUpdate.newCameraPosition(
+            CameraPosition(target: latLng, zoom: 15.0)),
+      );
+    });
+
+    setMarker(latLng);
+
+    reverseGeocodeLatLng(latLng);
+
+    getNearbyPlaces(latLng);
+  }
+
+  // constructor
+  // PlacePickerState();
+
+  void onMapCreated(GoogleMapController controller) {
+    this.mapController.complete(controller);
+    moveToCurrentUserLocation();
+  }
+
   /// This method gets the human readable name of the location. Mostly appears
   /// to be the road name and the locality.
   void reverseGeocodeLatLng(LatLng latLng) async {
@@ -514,9 +455,6 @@ class PlacePickerState extends State<PlacePicker> {
             var tmp = result['address_components'][i];
             var types = tmp["types"] as List<dynamic>;
             var shortName = tmp['short_name'];
-            if (types == null) {
-              continue;
-            }
             if (i == 0) {
               // [street_number]
               name = shortName;
@@ -575,33 +513,107 @@ class PlacePickerState extends State<PlacePicker> {
     }
   }
 
-  /// Moves the camera to the provided location and updates other UI features to
-  /// match the location.
-  void moveToLocation(LatLng latLng) {
-    this.mapController.future.then((controller) {
-      controller.animateCamera(
-        CameraUpdate.newCameraPosition(
-            CameraPosition(target: latLng, zoom: 15.0)),
-      );
-    });
-
-    setMarker(latLng);
-
-    reverseGeocodeLatLng(latLng);
-
-    getNearbyPlaces(latLng);
-  }
-
-  void moveToCurrentUserLocation() async {
-    if (widget.displayLocation != null) {
-      moveToLocation(widget.displayLocation!);
+  /// Begins the search process by displaying a "wait" overlay then
+  /// proceeds to fetch the autocomplete list. The bottom "dialog"
+  /// is hidden so as to give more room and better experience for the
+  /// autocomplete list overlay.
+  void searchPlace(String place) {
+    // on keyboard dismissal, the search was being triggered again
+    // this is to cap that.
+    if (place == this.previousSearchTerm) {
       return;
     }
-    if (_currentLocation != null) {
-      moveToLocation(_currentLocation!);
-    } else {
-      moveToLocation(widget.defaultLocation);
+
+    previousSearchTerm = place;
+
+    clearOverlay();
+
+    setState(() {
+      hasSearchTerm = place.length > 0;
+    });
+
+    if (place.length < 1) {
+      return;
     }
+
+    final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
+    final size = renderBox?.size;
+
+    final RenderBox? appBarBox =
+        this.appBarKey.currentContext?.findRenderObject() as RenderBox?;
+
+    this.overlayEntry = OverlayEntry(
+      builder: (context) => Positioned(
+        top: appBarBox?.size.height,
+        width: size?.width,
+        child: Material(
+          elevation: 1,
+          child: Container(
+            padding: EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+            child: Row(
+              children: <Widget>[
+                SizedBox(
+                    height: 24,
+                    width: 24,
+                    child: CircularProgressIndicator(strokeWidth: 3)),
+                SizedBox(width: 24),
+                Expanded(
+                    child: Text(widget.localizationItem!.findingPlace,
+                        style: TextStyle(fontSize: 16)))
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    Overlay.of(context).insert(this.overlayEntry!);
+
+    autoCompleteSearch(place);
+  }
+
+  /// Moves the marker to the indicated lat,lng
+  void setMarker(LatLng latLng) {
+    // markers.clear();
+    setState(() {
+      markers.clear();
+      markers.add(
+          Marker(markerId: MarkerId("selected-location"), position: latLng));
+    });
+  }
+
+  @override
+  void setState(fn) {
+    if (this.mounted) {
+      super.setState(fn);
+    }
+  }
+
+  // add delay to the map pop to avoid `Fatal Exception: java.lang.NullPointerException` error on Android
+  Future<bool> _delayedPop() async {
+    Navigator.of(context, rootNavigator: true).push(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => PopScope(
+          canPop: false,
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            body: Center(
+              child: CircularProgressIndicator.adaptive(),
+            ),
+          ),
+        ),
+        transitionDuration: Duration.zero,
+        barrierDismissible: false,
+        barrierColor: Colors.black45,
+        opaque: false,
+      ),
+    );
+
+    await Future.delayed(const Duration(milliseconds: 500));
+    Navigator.of(context)
+      ..pop()
+      ..pop(this.locationResult);
+    return Future.value(false);
   }
 
   Future<LatLng> _getCurrentLocation() async {
@@ -645,12 +657,12 @@ class PlacePickerState extends State<PlacePicker> {
       //moveToLocation(target);
       print('target:$target');
       return target;
-    } on TimeoutException catch (e) {
+    } on TimeoutException catch (_) {
       final locationData = await Geolocator.getLastKnownPosition();
       if (locationData != null) {
         return LatLng(locationData.latitude, locationData.longitude);
       } else {
-        return widget.defaultLocation;
+        return PlacePicker.defaultLocation;
       }
     }
   }
@@ -706,32 +718,5 @@ class PlacePickerState extends State<PlacePicker> {
             );
           });
     }
-  }
-
-  // add delay to the map pop to avoid `Fatal Exception: java.lang.NullPointerException` error on Android
-  Future<bool> _delayedPop() async {
-    Navigator.of(context, rootNavigator: true).push(
-      PageRouteBuilder(
-        pageBuilder: (_, __, ___) => WillPopScope(
-          onWillPop: () async => false,
-          child: Scaffold(
-            backgroundColor: Colors.transparent,
-            body: Center(
-              child: CircularProgressIndicator.adaptive(),
-            ),
-          ),
-        ),
-        transitionDuration: Duration.zero,
-        barrierDismissible: false,
-        barrierColor: Colors.black45,
-        opaque: false,
-      ),
-    );
-
-    await Future.delayed(const Duration(milliseconds: 500));
-    Navigator.of(context)
-      ..pop()
-      ..pop(this.locationResult);
-    return Future.value(false);
   }
 }
